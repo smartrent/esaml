@@ -112,4 +112,28 @@ document.getElementById('saml-req-form').submit();
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
+encode_http_redirect_test() ->
+    Redirect = encode_http_redirect("http://127.0.0.1:8443/test?sp=123", #xmlElement{}, <<"">>, <<"zzz">>),
+    #{query := QueryString, scheme := Scheme, host := Host, port := Port} = uri_string:parse(Redirect),
+    <<"http">> = Scheme,
+    <<"127.0.0.1">> = Host,
+    8443 = Port,
+    Query = uri_string:dissect_query(QueryString),
+    {value, {<<"SAMLEncoding">>, _}} = lists:search(fun({K, _}) -> K == <<"SAMLEncoding">> end, Query),
+    false = lists:search(fun({K, _}) -> K == "username" end, Query),
+    true = lists:member({<<"RelayState">>, <<"zzz">>}, Query),
+    true = lists:member({<<"sp">>, <<"123">>}, Query).
+
+encode_http_redirect_2_test() ->
+    Redirect = encode_http_redirect("http://127.0.0.1:8443/test?sp=123", #xmlElement{}, <<"foo_user">>, <<"zzz">>),
+    #{query := QueryString, scheme := Scheme, host := Host, port := Port} = uri_string:parse(Redirect),
+    <<"http">> = Scheme,
+    <<"127.0.0.1">> = Host,
+    8443 = Port,
+    Query = uri_string:dissect_query(QueryString),
+    {value, {<<"SAMLEncoding">>, _}} = lists:search(fun({K, _}) -> K == <<"SAMLEncoding">> end, Query),
+    {value, {<<"username">>, <<"foo_user">>}} = lists:search(fun({K, _}) -> K == <<"username">> end, Query),
+    true = lists:member({<<"RelayState">>, <<"zzz">>}, Query),
+    true = lists:member({<<"sp">>, <<"123">>}, Query).
+
 -endif.
