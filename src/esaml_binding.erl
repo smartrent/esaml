@@ -57,14 +57,18 @@ decode_response(_, SAMLResponse) ->
 encode_http_redirect(IdpTarget, SignedXml, Username, RelayState) ->
   Type = xml_payload_type(SignedXml),
   Req = lists:flatten(xmerl:export([SignedXml], xmerl_xml)),
-  Param = http_uri:encode(base64:encode_to_string(zlib:zip(Req))),
-  RelayStateEsc = http_uri:encode(binary_to_list(RelayState)),
-  FirstParamDelimiter = case lists:member($?, IdpTarget) of true -> "&"; false -> "?" end,
+  Param = base64:encode_to_string(zlib:zip(Req)),
   Username_Part = redirect_username_part(Username),
-  iolist_to_binary([IdpTarget, FirstParamDelimiter, "SAMLEncoding=", ?deflate, "&", Type, "=", Param, "&RelayState=", RelayStateEsc | Username_Part]).
+  IdpUriMap = uri_string:parse(IdpTarget),
+  #{query := QueryString} = IdpUriMap,
+  QueryList = uri_string:dissect_query(QueryString),
+  MergedQuery = uri_string:compose_query(lists:flatten([QueryList | [{<<"SAMLEncoding">>, ?deflate}, {Type, Param}, {<<"RelayState">>, RelayState} | Username_Part]])),
+  uri_string:recompose(maps:merge(IdpUriMap, #{query => MergedQuery})).
 
+redirect_username_part(Str) when is_list(Str), length(Str) > 0 ->
+  redirect_username_part(list_to_binary(Str));
 redirect_username_part(Username) when is_binary(Username), size(Username) > 0 ->
-  ["&username=", http_uri:encode(binary_to_list(Username))];
+  [{<<"username">>, Username}];
 redirect_username_part(_Other) -> [].
 
 %% @doc Encode a SAMLRequest (or SAMLResponse) as an HTTP-POST binding
@@ -113,27 +117,27 @@ document.getElementById('saml-req-form').submit();
 -include_lib("eunit/include/eunit.hrl").
 
 encode_http_redirect_test() ->
-    Redirect = encode_http_redirect("http://127.0.0.1:8443/test?sp=123", #xmlElement{}, <<"">>, <<"zzz">>),
+    Redirect = encode_http_redirect("http://127.0.0.1:8443/test?sp=123", #xmlElement{}, "", "zzz"),
     #{query := QueryString, scheme := Scheme, host := Host, port := Port} = uri_string:parse(Redirect),
-    <<"http">> = Scheme,
-    <<"127.0.0.1">> = Host,
+    "http" = Scheme,
+    "127.0.0.1" = Host,
     8443 = Port,
     Query = uri_string:dissect_query(QueryString),
-    {value, {<<"SAMLEncoding">>, _}} = lists:search(fun({K, _}) -> K == <<"SAMLEncoding">> end, Query),
+    {value, {"SAMLEncoding", _}} = lists:search(fun({K, _}) -> K == "SAMLEncoding" end, Query),
     false = lists:search(fun({K, _}) -> K == "username" end, Query),
-    true = lists:member({<<"RelayState">>, <<"zzz">>}, Query),
-    true = lists:member({<<"sp">>, <<"123">>}, Query).
+    true = lists:member({"RelayState", "zzz"}, Query),
+    true = lists:member({"sp", "123"}, Query).
 
 encode_http_redirect_2_test() ->
-    Redirect = encode_http_redirect("http://127.0.0.1:8443/test?sp=123", #xmlElement{}, <<"foo_user">>, <<"zzz">>),
+    Redirect = encode_http_redirect("http://127.0.0.1:8443/test?sp=123", #xmlElement{}, "foo_user", "zzz"),
     #{query := QueryString, scheme := Scheme, host := Host, port := Port} = uri_string:parse(Redirect),
-    <<"http">> = Scheme,
-    <<"127.0.0.1">> = Host,
+    "http" = Scheme,
+    "127.0.0.1" = Host,
     8443 = Port,
     Query = uri_string:dissect_query(QueryString),
-    {value, {<<"SAMLEncoding">>, _}} = lists:search(fun({K, _}) -> K == <<"SAMLEncoding">> end, Query),
-    {value, {<<"username">>, <<"foo_user">>}} = lists:search(fun({K, _}) -> K == <<"username">> end, Query),
-    true = lists:member({<<"RelayState">>, <<"zzz">>}, Query),
-    true = lists:member({<<"sp">>, <<"123">>}, Query).
+    {value, {"SAMLEncoding", _}} = lists:search(fun({K, _}) -> K == "SAMLEncoding" end, Query),
+    {value, {"username", "foo_user"}} = lists:search(fun({K, _}) -> K == "username" end, Query),
+    true = lists:member({"RelayState", "zzz"}, Query),
+    true = lists:member({"sp", "123"}, Query).
 
 -endif.
